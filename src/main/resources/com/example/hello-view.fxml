@@ -19,6 +19,7 @@
 
     <!--Inputfält och knappar-->
     <HBox spacing="10">
+        <TextField fx:id="topicTextField" promptText="Ange topic (t.ex. mytopic)" text="mytopic" />
         <TextField fx:id="messageTextField" promptText="Skriv ett meddelande..." />
         <Button text="Skicka" onAction="#sendMessage" />
     </HBox>

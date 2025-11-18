@@ -6,9 +6,10 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Button;
-
 import java.io.IOException;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Controller layer: mediates between the view (FXML) and the model.
@@ -18,8 +19,8 @@ public class HelloController {
     private final HelloModel model;
     private final ChatNetworkClient httpClient;  // Abstraktion (Dependency Inversion)
     private final String hostName;
-    private ChatNetworkClient.Subscription subscription;
-    private long subscriptionStartTime;
+    private final AtomicReference<com.example.Subscription> subscription = new AtomicReference<>();
+    private final AtomicLong subscriptionStartTime = new AtomicLong();
 
     @FXML private Label messageLabel;
 
@@ -28,6 +29,7 @@ public class HelloController {
     @FXML private TextField messageTextField;               //Används för att skriva nya meddelanden
     @FXML private Button sendButton;                       //Används för att skicka meddelanden
     @FXML private Label connectionStatusLabel;            // Status för anslutning
+    @FXML private TextField topicTextField;
 
     //Konstruktor för Dependency Injection
     public HelloController(HelloModel model, ChatNetworkClient httpClient, String hostName) {
@@ -50,6 +52,9 @@ public class HelloController {
                         .then("Ansluten: ja")
                         .otherwise("Ansluten: nej")
         );
+        if (topicTextField != null) {
+            topicTextField.setText("mytopic");
+        }
     }
 
     @FXML
@@ -67,11 +72,15 @@ public class HelloController {
     }
 
     private NtfyMessage createMessage(String text) {
+        String topic = topicTextField.getText();
+        if (topic == null || topic.trim().isEmpty()) {
+            topic = "mytopic";
+        }
         return new NtfyMessage(
                 UUID.randomUUID().toString(),
-                System.currentTimeMillis(),
+                System.currentTimeMillis() / 1000L,
                 "message",
-                "mytopic",
+                topic,
                 text
         );
     }
@@ -90,9 +99,10 @@ public class HelloController {
     }
 
     private void unsubscribeFromCurrentTopic() {
-        if (subscription != null) {
+        com.example.Subscription current = subscription.get();
+        if (current != null) {
             try {
-                subscription.close();
+                current.close();
             } catch (IOException e) {
                 System.err.println("Kunde inte stänga gammal prenumeration: " + e.getMessage());
             }
@@ -100,12 +110,17 @@ public class HelloController {
     }
 
     private void startNewSubscription() {
-        subscriptionStartTime = System.currentTimeMillis();  // Spara starttiden
-        subscription = httpClient.subscribe(
+        String topic = topicTextField.getText();
+        if (topic == null || topic.trim().isEmpty()) {
+            topic = "mytopic";  // Fallback om fältet är tomt
+        }
+        subscriptionStartTime.set(System.currentTimeMillis());
+        com.example.Subscription newSubscription = httpClient.subscribe(
                 hostName,
-                "mytopic",
+                topic,  // Använd det dynamiska topic-värdet
                 this::handleIncomingMessage
         );
+        subscription.set(newSubscription);
     }
 
     private void handleIncomingMessage(NtfyMessage message) {
@@ -114,7 +129,7 @@ public class HelloController {
         long currentTimeSeconds = System.currentTimeMillis() / 1000;
 
         // Hoppa över gamla meddelanden
-        if (messageTimeSeconds < (subscriptionStartTime / 1000)) {
+        if (messageTimeSeconds < (subscriptionStartTime.get() / 1000)) {
             System.out.println("Hoppar över (gammalt meddelande).");
             return;
         }
@@ -138,18 +153,20 @@ public class HelloController {
 
     @FXML
     private void unsubscribeFromTopic() {
-        if (subscription != null) {
-            closeSubscription();
-            model.setConnected(false);
-            subscription = null;  // Rensa referensen
+        com.example.Subscription current = subscription.getAndSet(null);  // Trådsäker: hämta och nollställ
+        if (current != null) {
+            closeSubscription(current);
         }
+        model.setConnected(false);
     }
 
-    private void closeSubscription() {
+    private void closeSubscription(com.example.Subscription sub) {
         try {
-            subscription.close();
+            sub.close();
         } catch (IOException e) {
             System.err.println("Fel vid avprenumeration: " + e.getMessage());
         }
     }
+
+
 }

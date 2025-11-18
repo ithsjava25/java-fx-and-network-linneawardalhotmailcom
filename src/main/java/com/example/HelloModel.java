@@ -38,17 +38,17 @@ public class HelloModel {
         this.isTesting = testing;
     }
 
-    // Ersätt den gamla runOnFX-metoden med denna:
+
     private void runOnFX(Runnable task) {
-        if (isTesting) {  // <-- Ny logik för tester
+        if (isTesting) {
             task.run();
         } else if (Platform.isFxApplicationThread()) {
             task.run();
         } else {
             try {
                 Platform.runLater(task);
-            } catch (IllegalThreadStateException notInitialized) {
-                task.run();  // Fallback för enhetstester (om JavaFX inte är initierat)
+            } catch (IllegalStateException e) {
+                task.run();
             }
         }
 
